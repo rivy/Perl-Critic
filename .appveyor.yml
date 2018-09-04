@@ -1,6 +1,6 @@
 # .appveyor.yml (for Perl distributions)
 
-# * for usage instructions, see <https://github.com/rivy/AppVeyorCI.helpers-perl/blob/master/README.mkd>
+# * (APIv1) for usage instructions, see <https://github.com/rivy/CI.AppVeyor.helpers-perl/blob/stable.APIv1/README.mkd>
 
 # ref: <https://www.appveyor.com/docs/appveyor-yml>[`@`](https://archive.is/OUJHS)
 # * "appveyor.yml" validation tool @ <https://ci.appveyor.com/tools/validate-yaml>
@@ -17,10 +17,11 @@ environment:
   matrix:
     - Perl_VERSION: "latest"
       COVERAGE: "Codecov Coveralls" ## note: case sensitive!
-    - Perl_VERSION: "latest"
-    - Perl_VERSION: "5.24.3.1"
-    - Perl_VERSION: "5.22.3.1"
-    - Perl_VERSION: "5.20.3.3"
+    - Perl_VERSION: "5.28"
+    - Perl_VERSION: "5.26"
+    - Perl_VERSION: "5.24"
+    - Perl_VERSION: "5.22"
+    - Perl_VERSION: "5.20"
     - Perl_VERSION: "5.16"
     - Perl_VERSION: "5.14"
     - Perl_VERSION: "5.12"
@@ -40,9 +41,10 @@ environment:
     AUTHOR_TESTING: ""
     RELEASE_TESTING: ""
     # * .appveyor.yml configuration variables
+    CI_HELPER_API_VERSION: "1"  ## * API version (the expected/requested helper API version)
     CI_HELPER_BRANCH: ""        ## "" => auto-set, valid alternates are [ "stable" (the default), "canary", BRANCH, or TAG ]
     CI_HELPER_REPO: ""          ## "" => auto-set; allows easier use of alternate helper scripts (ie, alternate forks)
-    DEVEL_COVER_OPTIONS: ""     ## "" => auto-set, value determined by DIST_TOOLING; " " is a neutral setting which will block auto-set
+    DEVEL_COVER_OPTIONS: ""     ## "" => auto-set, value determined by DIST_TOOLING; quoted whitespace (eg, " ") is an empty/neutral setting which also blocks auto-set
     DIST_EXTRA_DEPS: ""         ## additional required/requested dependencies for build and/or testing
     DIST_SUPPRESS_DEPS: ""      ## [ "" == false, <non-empty> == true ]; "true" can be useful for CORE modules, suppressing discovery and installation of dependencies, unless otherwise required (by COVERAGE or DIST_EXTRA_DEPS)
     DIST_TOOLING: ""            ## [ "build", "make" ]; "" => auto-set based on existence of "Build.PL" and/or "Makefile.PL"
@@ -55,7 +57,7 @@ cache:
 #   - '%CI_CACHE_DIR% -> .appveyor.yml'
 
 install:
-  - ps: ;"[{0:HH:mm:ss}].install" -f $($mark = get-date; $mark)
+  - ps: ; write-host $("[{0:HH:mm:ss}].install" -f $($mark = get-date; $mark)) -f darkgray
   # ensure CWD is project main directory
   - cd "%APPVEYOR_BUILD_FOLDER%"
   # perform any special preparation (optional; distribution specific)
@@ -70,15 +72,17 @@ install:
   - if NOT DEFINED CI_CACHE_DIR ( set "CI_CACHE_DIR=%CI_TEMP_DIR%\cache" )
   - if NOT EXIST "%CI_CACHE_DIR%" ( mkdir "%CI_CACHE_DIR%" )
   # finalize HELPER repository location
-  - if NOT DEFINED CI_HELPER_REPO ( set "CI_HELPER_REPO=https://github.com/rivy/AppVeyorCI.helpers-perl.git" )
+  - if NOT DEFINED CI_HELPER_REPO ( set "CI_HELPER_REPO=https://github.com/rivy/CI.AppVeyor.helpers-perl.git" )
   - if NOT DEFINED CI_HELPER_BRANCH ( set "CI_HELPER_BRANCH=stable" )
+  - if /I "%CI_HELPER_BRANCH%"=="canary" ( set "CI_HELPER_BRANCH=canary.APIv%CI_HELPER_API_VERSION%" )
+  - if /I "%CI_HELPER_BRANCH%"=="stable" ( set "CI_HELPER_BRANCH=stable.APIv%CI_HELPER_API_VERSION%" )
   # find / download helpers
-  - ps: ;"[{0:HH:mm:ss}].install ... helpers" -f $($mark_sub = get-date; $mark_sub)
+  - ps: ; write-host $("[{0:HH:mm:ss}].install (helpers)" -f $($mark_sub = get-date; $mark_sub)) -f darkgray
   # * use "vendored" copy if present
   - ps: if ( ! $env:CI_HELPERS -and (test-path ".appveyor_bin") ) { $env:CI_HELPERS=[IO.Path]::GetFullPath(".appveyor_bin") ; "[{0:HH:mm:ss}].install ... helpers ... (vendored)" -f $(get-date) }
   # * clone/download helpers from repo if needed
-  - ps: if ( ! $env:CI_HELPERS ) { $repo_path = $( mkdir "${env:CI_TEMP_DIR}\helpers" ).Fullname ; $git_cmd = "git clone ${env:CI_HELPER_REPO} `"${repo_path}`" -b ${env:CI_HELPER_BRANCH} 2>&1"; write-host "``${git_cmd}``"; & 'CMD' @( '/c', $git_cmd ) ; $env:CI_HELPERS = "${repo_path}\.appveyor_bin" }
-  - ps: ;"[{0:HH:mm:ss}].install ... helpers ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark_sub).totalseconds)
+  - ps: if ( ! $env:CI_HELPERS ) { $repo_path = $( mkdir "${env:CI_TEMP_DIR}\helpers" ).Fullname ; $git_cmd = "git clone ${env:CI_HELPER_REPO} `"${repo_path}`" -b ${env:CI_HELPER_BRANCH} 2>&1" ; write-host "``${git_cmd}``" ; & 'CMD' @( '/c', $git_cmd ) ; $err = $LASTEXITCODE ; $env:CI_HELPERS = "${repo_path}\.appveyor_bin" ; if ($err -ne 0) { exit -1 } ; }
+  - ps: ; write-host $("[{0:HH:mm:ss}].install (helpers) ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark_sub).totalseconds)) -f gray
   # resolve requested coverage with needed configuration
   - ps: . "${env:CI_HELPERS}\install.evaluate-coverage.ps1"
   ##
@@ -93,10 +97,10 @@ install:
   # * ref: <https://github.com/appveyor/ci/issues/1606>[`@`](https://archive.is/RVpnF)
   - if DEFINED APPVEYOR_REPO_BRANCH if /I "%APPVEYOR_REPO_SCM%"=="git" ( git checkout "%APPVEYOR_REPO_BRANCH%" & git reset --hard "%APPVEYOR_REPO_COMMIT%" )
   # install perl (strawberry variant) + version verification
-  - ps: ;"[{0:HH:mm:ss}].install ... perl" -f $($mark_sub = get-date; $mark_sub)
+  - ps: ; write-host $("[{0:HH:mm:ss}].install (perl)" -f $($mark_sub = get-date; $mark_sub)) -f darkgray
   - call "%CI_HELPERS%\install.install-perl.BAT"
   - perl -V
-  - ps: ;"[{0:HH:mm:ss}].install ... perl ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark_sub).totalseconds)
+  - ps: ; write-host $("[{0:HH:mm:ss}].install (perl) ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark_sub).totalseconds)) -f gray
   # determine build tooling
   - if NOT DEFINED DIST_TOOLING if EXIST "Build.PL" ( set "DIST_TOOLING=build" )
   - if NOT DEFINED DIST_TOOLING if EXIST "Makefile.PL" ( set "DIST_TOOLING=make" )
@@ -105,18 +109,18 @@ install:
   # setup testing method/options and test files
   - ps: . "${env:CI_HELPERS}\install.setup-testing.ps1"
   # distribution prep prior to the build/make process (ie, build dependencies and OS_unsupported check)
-  - ps: ;"[{0:HH:mm:ss}].install ... distribution requirements" -f $($mark_sub = get-date; $mark_sub)
+  - ps: ; write-host $("[{0:HH:mm:ss}].install (distribution requirements)" -f $($mark_sub = get-date; $mark_sub)) -f darkgray
   - call "%CI_HELPERS%\install.setup-dist.BAT"
-  - ps: ;"[{0:HH:mm:ss}].install ... distribution requirements ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark_sub).totalseconds)
+  - ps: ; write-host $("[{0:HH:mm:ss}].install (distribution requirements) ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark_sub).totalseconds)) -f gray
   # coverage prep
-  - ps: ;"[{0:HH:mm:ss}].install ... coverage" -f $($mark_sub = get-date; $mark_sub)
+  - ps: ; write-host $("[{0:HH:mm:ss}].install (coverage)" -f $($mark_sub = get-date; $mark_sub)) -f darkgray
   - ps: . "${env:CI_HELPERS}\install.setup-coverage.ps1"
-  - ps: ;"[{0:HH:mm:ss}].install ... coverage ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark_sub).totalseconds)
+  - ps: ; write-host $("[{0:HH:mm:ss}].install (coverage) ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark_sub).totalseconds)) -f gray
   #
-  - ps: ;"[{0:HH:mm:ss}].install ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)
+  - ps: ; write-host $("[{0:HH:mm:ss}].install ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)) -f green
 
 before_build:
-  - ps: ;"[{0:HH:mm:ss}].before_build" -f $($mark = get-date; $mark)
+  - ps: ; write-host $("[{0:HH:mm:ss}].before_build" -f $($mark = get-date; $mark)) -f darkgray
   # ensure CWD is project main directory
   - cd "%APPVEYOR_BUILD_FOLDER%"
   # * for non-COVERAGE builds, enable parallel processing (COVERAGE builds need sequential, correctly interleaved, output to avoid warnings)
@@ -131,23 +135,23 @@ before_build:
   # show final build-related environment variables
   - call "%CI_HELPERS%\log-env.BAT"
   #
-  - ps: ;"[{0:HH:mm:ss}].before_build ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)
+  - ps: ; write-host $("[{0:HH:mm:ss}].before_build ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)) -f green
 
 build_script:
-  - ps: ;"[{0:HH:mm:ss}].build" -f $($mark = get-date; $mark)
+  - ps: ; write-host $("[{0:HH:mm:ss}].build" -f $($mark = get-date; $mark)) -f darkgray
   - call "%CI_HELPERS%\build.dist.BAT"
-  - ps: ;"[{0:HH:mm:ss}].build ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)
+  - ps: ; write-host $("[{0:HH:mm:ss}].build ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)) -f green
 
 test_script:
-  - ps: ;"[{0:HH:mm:ss}].test [``$(@(${env:TEST_METHOD},${env:TEST_FILES}) -ne $null -join ' ')``]" -f $($mark = get-date; $mark)
+  - ps: ; write-host $("[{0:HH:mm:ss}].test [``$(@(${env:TEST_METHOD},${env:TEST_FILES}) -ne $null -join ' ')``]" -f $($mark = get-date; $mark)) -f darkgray
   - call %TEST_METHOD% %TEST_FILES%
-  - ps: ;"[{0:HH:mm:ss}].test ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)
+  - ps: ; write-host $("[{0:HH:mm:ss}].test ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)) -f green
 
 after_test:
-  - ps: ;"[{0:HH:mm:ss}].after_test" -f $($mark = get-date; $mark)
+  - ps: ; write-host $("[{0:HH:mm:ss}].after_test" -f $($mark = get-date; $mark)) -f darkgray
   # reporting
   # * report any code coverage information
   - ps: if (-not $env:OS_unsupported -and $env:COVERAGE) { $env:COVERAGE.split() | foreach { CMD /c "cover -report $_ 2>&1" } }
-  - ps: ;"[{0:HH:mm:ss}].after_test ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)
+  - ps: ; write-host $("[{0:HH:mm:ss}].after_test ... done ({1:0.0}s)" -f $(get-date; $($(get-date) - $mark).totalseconds)) -f green
   # end with a prominent "unsupported" notice/warning, when needed
   - ps: if ($env:OS_unsupported) { write-host -f magenta "WARN:` OS unsupported" }
